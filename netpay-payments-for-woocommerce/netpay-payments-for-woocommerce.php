@@ -6,7 +6,7 @@
  * Author: Xafax Belgium, Guy Verschuere
  * Author URI: https://www.xafax.be
  * Text Domain: netpay-payments-for-woocommerce
- * Version: 0.4
+ * Version: 0.5
  * Requires at least: 5.3
  * Requires PHP: 7.0
  *
@@ -103,7 +103,7 @@ function netpay_init_gateway_class() {
 			if ($this->settings['authentication']=='userpassword') echo '<div class="form-row form-row-wide"><label>Username <span class="required">*</span></label>
 				<input name="netpay_username" id="netpay_username" type="text" autocomplete="off">
 				</div>
-				<div class="form-row form-row-last">
+				<div class="form-row form-row-wide">
 					<label>Password <span class="required">*</span></label>
 					<input name="netpay_password" id="netpay_password" type="password" autocomplete="off" placeholder="">
 				</div>
