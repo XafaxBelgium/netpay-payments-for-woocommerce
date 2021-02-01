@@ -6,12 +6,11 @@
  * Author: Xafax Belgium, Guy Verschuere
  * Author URI: https://www.xafax.be
  * Text Domain: netpay-payments-for-woocommerce
- * Version: 0.5
+ * Version: 0.7
  * Requires at least: 5.3
  * Requires PHP: 7.0
  *
  */
-
 if (in_array('woocommerce/woocommerce.php', get_option('active_plugins'))) {
 	add_filter( 'woocommerce_payment_gateways', 'netpay_add_gateway_class');
 	function netpay_add_gateway_class($gateways) {
@@ -20,7 +19,6 @@ if (in_array('woocommerce/woocommerce.php', get_option('active_plugins'))) {
 	}
 	add_action('plugins_loaded', 'netpay_init_gateway_class');
 }
-
 function netpay_init_gateway_class() {
 	class WC_Netpay_Gateway extends WC_Payment_Gateway {
 		public function __construct() {
@@ -62,8 +60,14 @@ function netpay_init_gateway_class() {
 				'comment'=>array(
 					'title'=>'Comment',
 					'type'=>'text',
-					'description'=>'This controls the comment sent with the Netpay transaction.',
+					'description'=>'This controls the comment sent with the Netpay transaction.<br>Only used when payment method is set to "Write balance"',
 					'default'=>'WooCommerce orderid ',
+				),
+				'add_order_note'=>array(
+					'title'=>'Add order note',
+					'type'=>'text',
+					'description'=>'This note is added to the order after payment.<br>Leave empty to disable.<br>Example: Your order has been paid.',
+					'default'=>'Hey, your order is paid! Thank you!',
 				),
 				'authentication'=>array(
 					'title'=>'Authentication',
@@ -187,7 +191,7 @@ function netpay_init_gateway_class() {
 				if ($body['ResultMessage']=='OK') {
 					$order->payment_complete();
 					wc_reduce_stock_levels($order_id);
-					$order->add_order_note( 'Hey, your order is paid! Thank you!', true);
+					if (strlen($this->settings['add_order_note'])>0) $order->add_order_note($this->settings['add_order_note'], true);
 					$woocommerce->cart->empty_cart();
 					return array(
 						'result'=>'success',
@@ -224,7 +228,8 @@ function check_for_plugin_update($checked_data) {
 			'body' => array(
 				'action' => 'basic_check',
 				'request' => serialize($args),
-				'api-key' => md5(get_bloginfo('url'))
+				'url' => get_bloginfo('url'),
+				'wp_version' => $wp_version
 			),
 			'user-agent' => 'WordPress/'.$wp_version.'; '.get_bloginfo('url')
 		);
@@ -244,14 +249,14 @@ function plugin_api_call($def, $action, $args) {
 			'body' => array(
 				'action' => $action,
 				'request' => serialize($args),
-				'api-key' => md5(get_bloginfo('url'))
+				'url' => get_bloginfo('url'),
+				'wp_version' => $wp_version
 			),
 			'user-agent' => 'WordPress/'.$wp_version.'; '.get_bloginfo('url')
 		);
 	$request=wp_remote_post($api_url, $request_string);
-	if (is_wp_error($request)) {
-		$res=new WP_Error('plugins_api_failed', __('An Unexpected HTTP Error occurred during the API request.</p> <p><a href="?" onclick="document.location.reload(); return false;">Try again</a>'), $request->get_error_message());
-	} else {
+	if (is_wp_error($request)) $res=new WP_Error('plugins_api_failed', __('An Unexpected HTTP Error occurred during the API request.</p> <p><a href="?" onclick="document.location.reload(); return false;">Try again</a>'), $request->get_error_message());
+	else {
 		$res=unserialize($request['body']);
 		if ($res === false) $res=new WP_Error('plugins_api_failed', __('An unknown error occurred'), $request['body']);
 	}
