@@ -6,7 +6,7 @@
  * Author: Xafax Belgium, Guy Verschuere
  * Author URI: https://www.xafax.be
  * Text Domain: netpay-payments-for-woocommerce
- * Version: 0.7
+ * Version: 0.8
  * Requires at least: 5.3
  * Requires PHP: 7.0
  *
@@ -137,18 +137,13 @@ function netpay_init_gateway_class() {
 			}
 			return true;
 		}
-		public function process_payment( $order_id ) {
+		public function process_payment($order_id) {
 			global $woocommerce;
-			$order=wc_get_order( $order_id);
+			$order=wc_get_order($order_id);
 			$orderdata=json_decode($order, true);
 			$body=array(
 				'apikey'=>$this->settings['apikey'],
-				'authentication'=>$this->settings['authentication'],
-				'paymentmethod'=>$this->settings['paymentmethod'],
-				'deviceid'=>$this->settings['deviceid'],
-				'comment'=>$this->settings['comment'],
 				'orderid'=>$orderdata['id'],
-				'amount'=>$orderdata['total']
 			);
 			if ($this->settings['authentication']=='userpassword') {
 				$body['username']=$_POST[ 'netpay_username' ];
@@ -156,28 +151,31 @@ function netpay_init_gateway_class() {
 			} elseif ($this->settings['authentication']=='cardid') {
 				$body['cardid']=$_POST[ 'netpay_cardid' ];
 			}
-			if ($this->settings['paymentmethod']=='recordplu') {
+			if ($this->settings['paymentmethod']=='writebalance') {
+				$body['comment']=$this->settings['comment'];
+				$body['amount']=$orderdata['total'];
+			} elseif ($this->settings['paymentmethod']=='recordplu') {
 				$order_items=$order->get_items( array('line_item', 'fee', 'shipping') );
 				foreach ( $order->get_items() as $item_id => $item ) {
 					$i['product_id']=$item->get_product_id();
-					$i['variation_id']=$item->get_variation_id();
+					//$i['variation_id']=$item->get_variation_id();
 					$i['product']=$item->get_product();
 					$i['name']=$item->get_name();
 					$i['quantity']=$item->get_quantity();
 					$i['subtotal']=$item->get_subtotal();
-					$i['total']=$item->get_total();
+					//$i['total']=$item->get_total();
 					$i['tax']=$item->get_subtotal_tax();
-					$i['taxclass']=$item->get_tax_class();
-					$i['taxstat']=$item->get_tax_status();
-					$i['allmeta']=$item->get_meta_data();
-					$i['type']=$item->get_type();
+					//$i['taxclass']=$item->get_tax_class();
+					//$i['taxstat']=$item->get_tax_status();
+					//$i['allmeta']=$item->get_meta_data();
+					//$i['type']=$item->get_type();
 					$items[]=$i;
 				}
 				$body['items']=$items;
 			}
 			$args=array(
 				'method'=>'POST',
-				'timeout'=>20,
+				'timeout'=>30,
 				'redirection'=>5,
 				'httpversion'=>'1.0',
 				'blocking'=>true,
@@ -220,15 +218,18 @@ add_filter('pre_set_site_transient_update_plugins', 'check_for_plugin_update');
 function check_for_plugin_update($checked_data) {
 	global $api_url, $plugin_slug, $wp_version;
 //	if (empty($checked_data->checked)) return $checked_data;
+	$plugin_info=get_site_transient('update_plugins');
+	$current_version=$plugin_info->checked[$plugin_slug .'/'. $plugin_slug .'.php'];
 	$args=array(
 		'slug' => $plugin_slug,
-		'version' => $checked_data->checked[$plugin_slug .'/'. $plugin_slug .'.php'],
+		'version' => $current_version,
 	);
 	$request_string=array(
 			'body' => array(
 				'action' => 'basic_check',
 				'request' => serialize($args),
 				'url' => get_bloginfo('url'),
+				'version'=>$current_version,
 				'wp_version' => $wp_version
 			),
 			'user-agent' => 'WordPress/'.$wp_version.'; '.get_bloginfo('url')
@@ -250,6 +251,7 @@ function plugin_api_call($def, $action, $args) {
 				'action' => $action,
 				'request' => serialize($args),
 				'url' => get_bloginfo('url'),
+				'version'=>$current_version,
 				'wp_version' => $wp_version
 			),
 			'user-agent' => 'WordPress/'.$wp_version.'; '.get_bloginfo('url')
