@@ -6,11 +6,12 @@
  * Author: Xafax Belgium, Guy Verschuere
  * Author URI: https://www.xafax.be
  * Text Domain: netpay-payments-for-woocommerce
- * Version: 0.8
+ * Version: 1.0
  * Requires at least: 5.3
  * Requires PHP: 7.0
  *
  */
+
 if (in_array('woocommerce/woocommerce.php', get_option('active_plugins'))) {
 	add_filter( 'woocommerce_payment_gateways', 'netpay_add_gateway_class');
 	function netpay_add_gateway_class($gateways) {
@@ -19,6 +20,7 @@ if (in_array('woocommerce/woocommerce.php', get_option('active_plugins'))) {
 	}
 	add_action('plugins_loaded', 'netpay_init_gateway_class');
 }
+
 function netpay_init_gateway_class() {
 	class WC_Netpay_Gateway extends WC_Payment_Gateway {
 		public function __construct() {
@@ -60,13 +62,13 @@ function netpay_init_gateway_class() {
 				'comment'=>array(
 					'title'=>'Comment',
 					'type'=>'text',
-					'description'=>'This controls the comment sent with the Netpay transaction.<br>Only used when payment method is set to "Write balance"',
+					'description'=>'This controls the comment sent with the Netpay transaction.',
 					'default'=>'WooCommerce orderid ',
 				),
 				'add_order_note'=>array(
 					'title'=>'Add order note',
 					'type'=>'text',
-					'description'=>'This note is added to the order after payment.<br>Leave empty to disable.<br>Example: Your order has been paid.',
+					'description'=>'This note is added to the order after payment. Leave empty to disable.',
 					'default'=>'Hey, your order is paid! Thank you!',
 				),
 				'authentication'=>array(
@@ -137,9 +139,9 @@ function netpay_init_gateway_class() {
 			}
 			return true;
 		}
-		public function process_payment($order_id) {
+		public function process_payment( $order_id ) {
 			global $woocommerce;
-			$order=wc_get_order($order_id);
+			$order=wc_get_order( $order_id);
 			$orderdata=json_decode($order, true);
 			$body=array(
 				'apikey'=>$this->settings['apikey'],
@@ -218,21 +220,21 @@ add_filter('pre_set_site_transient_update_plugins', 'check_for_plugin_update');
 function check_for_plugin_update($checked_data) {
 	global $api_url, $plugin_slug, $wp_version;
 //	if (empty($checked_data->checked)) return $checked_data;
-	$plugin_info=get_site_transient('update_plugins');
-	$current_version=$plugin_info->checked[$plugin_slug .'/'. $plugin_slug .'.php'];
+	$version=$checked_data->checked[$plugin_slug .'/'. $plugin_slug .'.php'];
 	$args=array(
 		'slug' => $plugin_slug,
-		'version' => $current_version,
+		'version' => $version,
 	);
+	$url=get_bloginfo('url');
 	$request_string=array(
 			'body' => array(
 				'action' => 'basic_check',
 				'request' => serialize($args),
-				'url' => get_bloginfo('url'),
-				'version'=>$current_version,
-				'wp_version' => $wp_version
+				'url'=>$url,
+				'version'=>$version,
+				'wp_version'=>$wp_version
 			),
-			'user-agent' => 'WordPress/'.$wp_version.'; '.get_bloginfo('url')
+			'user-agent' => 'WordPress/'
 		);
 	$raw_response=wp_remote_post($api_url, $request_string);
 	if (!is_wp_error($raw_response) && ($raw_response['response']['code'] == 200)) $response=unserialize($raw_response['body']);
@@ -246,19 +248,21 @@ function plugin_api_call($def, $action, $args) {
 	$plugin_info=get_site_transient('update_plugins');
 	$current_version=$plugin_info->checked[$plugin_slug .'/'. $plugin_slug .'.php'];
 	$args->version=$current_version;
+	$url=get_bloginfo('url');
 	$request_string=array(
 			'body' => array(
 				'action' => $action,
 				'request' => serialize($args),
-				'url' => get_bloginfo('url'),
+				'url'=>$url,
 				'version'=>$current_version,
-				'wp_version' => $wp_version
+				'wp_version'=>$wp_version
 			),
-			'user-agent' => 'WordPress/'.$wp_version.'; '.get_bloginfo('url')
+			'user-agent' => 'WordPress/'
 		);
 	$request=wp_remote_post($api_url, $request_string);
-	if (is_wp_error($request)) $res=new WP_Error('plugins_api_failed', __('An Unexpected HTTP Error occurred during the API request.</p> <p><a href="?" onclick="document.location.reload(); return false;">Try again</a>'), $request->get_error_message());
-	else {
+	if (is_wp_error($request)) {
+		$res=new WP_Error('plugins_api_failed', __('An Unexpected HTTP Error occurred during the API request.</p> <p><a href="?" onclick="document.location.reload(); return false;">Try again</a>'), $request->get_error_message());
+	} else {
 		$res=unserialize($request['body']);
 		if ($res === false) $res=new WP_Error('plugins_api_failed', __('An unknown error occurred'), $request['body']);
 	}
