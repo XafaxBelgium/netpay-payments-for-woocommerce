@@ -6,12 +6,12 @@
  * Author: Xafax Belgium, Guy Verschuere
  * Author URI: https://www.xafax.be
  * Text Domain: netpay-payments-for-woocommerce
- * Version: 1.0
+ * Version: 1.1
  * Requires at least: 5.3
  * Requires PHP: 7.0
  *
  */
-
+session_start();
 if (in_array('woocommerce/woocommerce.php', get_option('active_plugins'))) {
 	add_filter( 'woocommerce_payment_gateways', 'netpay_add_gateway_class');
 	function netpay_add_gateway_class($gateways) {
@@ -23,6 +23,7 @@ if (in_array('woocommerce/woocommerce.php', get_option('active_plugins'))) {
 
 function netpay_init_gateway_class() {
 	class WC_Netpay_Gateway extends WC_Payment_Gateway {
+
 		public function __construct() {
 			$this->id='netpay';
 			$this->icon='https://mynetpay.be/favicon.ico';
@@ -35,6 +36,12 @@ function netpay_init_gateway_class() {
 			$this->title=$this->get_option('title');
 			$this->description=$this->get_option('description');
 			$this->enabled=$this->get_option('enabled');
+			$this->blocked=false;
+			$this->xfx_codes=array(1317, 9011, -1);
+			foreach ($this->xfx_codes as $xfx_code) {
+				if (!isset($_SESSION['xfx_error_'.$xfx_code])) $_SESSION['xfx_error_'.$xfx_code]=0;
+				elseif ($_SESSION['xfx_error_'.$xfx_code]>$this->settings['attempts']) $this->blocked=true;
+			}
 			add_action( 'woocommerce_update_options_payment_gateways_'.$this->id, array( $this, 'process_admin_options' ));
 		}
 		public function init_form_fields(){
@@ -71,18 +78,6 @@ function netpay_init_gateway_class() {
 					'description'=>'This note is added to the order after payment. Leave empty to disable.',
 					'default'=>'Hey, your order is paid! Thank you!',
 				),
-				'authentication'=>array(
-					'title'=>'Authentication',
-					'label'=>'Authentication',
-					'type'=>'select',
-					'description'=>'',
-					'options'=>array(
-						'userpassword'=>'Username/Password',
-						'cardid'=>'CardID'
-					),
-					'default'=>'Username/Password',
-					'desc_tip'=>false,
-				),
 				'paymentmethod'=>array(
 					'title'=>'Paymentmethod',
 					'label'=>'Payment method',
@@ -95,6 +90,26 @@ function netpay_init_gateway_class() {
 					'default'=>'Username/Password',
 					'desc_tip'=>false,
 				),
+				'authentication'=>array(
+					'title'=>'Authentication',
+					'label'=>'Authentication',
+					'type'=>'select',
+					'description'=>'',
+					'options'=>array(
+						'userpassword'=>'Username/Password',
+						'cardid'=>'CardID'
+					),
+					'default'=>'Username/Password',
+					'desc_tip'=>false,
+				),
+				'attempts'=>array(
+					'title'=>'Security',
+					'label'=>'Security',
+					'type'=>'number',
+					'description'=>'Allow users this many attempts before being blocked for a while.',
+					'default'=>5,
+					'desc_tip'=>false,
+				),
 				'apikey'=>array(
 					'title'=>'Netpay API key',
 					'type'=>'text',
@@ -103,44 +118,60 @@ function netpay_init_gateway_class() {
 			);
 		}
 		public function payment_fields() {
-			if ($this->description) echo wpautop(wp_kses_post($this->description));
-			echo '<fieldset id="wc-'.esc_attr( $this->id ).'-cc-form" class="wc-credit-card-form wc-payment-form" style="background:transparent;">';
-			do_action( 'woocommerce_credit_card_form_start', $this->id);
-			if ($this->settings['authentication']=='userpassword') echo '<div class="form-row form-row-wide"><label>Username <span class="required">*</span></label>
-				<input name="netpay_username" id="netpay_username" type="text" autocomplete="off">
-				</div>
-				<div class="form-row form-row-wide">
-					<label>Password <span class="required">*</span></label>
-					<input name="netpay_password" id="netpay_password" type="password" autocomplete="off" placeholder="">
-				</div>
-				<div class="clear"></div>';
-			elseif ($this->settings['authentication']=='cardid') echo '<div class="form-row form-row-wide"><label>CardID <span class="required">*</span></label>
-				<input name="netpay_cardid" id="netpay_cardid" type="text" autocomplete="off">
-				</div>
-				<div class="clear"></div>';
-			do_action( 'woocommerce_credit_card_form_end', $this->id);
-			echo '<div class="clear"></div></fieldset>';
+			if ($this->blocked==false) {
+				if ($this->description) echo wpautop(wp_kses_post($this->description));
+				echo '<fieldset id="wc-'.esc_attr( $this->id ).'-cc-form" class="wc-credit-card-form wc-payment-form" style="background:transparent;">';
+				do_action( 'woocommerce_credit_card_form_start', $this->id);
+				if ($this->settings['authentication']=='userpassword') echo '<div class="form-row form-row-wide"><label>Username <span class="required">*</span></label>
+					<input name="netpay_username" id="netpay_username" type="text" autocomplete="off">
+					</div>
+					<div class="form-row form-row-wide">
+						<label>Password <span class="required">*</span></label>
+						<input name="netpay_password" id="netpay_password" type="password" autocomplete="off" placeholder="">
+					</div>
+					<div class="clear"></div>';
+				elseif ($this->settings['authentication']=='cardid') echo '<div class="form-row form-row-wide"><label>CardID <span class="required">*</span></label>
+					<input name="netpay_cardid" id="netpay_cardid" type="text" autocomplete="off">
+					</div>
+					<div class="clear"></div>';
+				do_action( 'woocommerce_credit_card_form_end', $this->id);
+				echo '<div class="clear"></div></fieldset>';
+			} else {
+				echo 'Too many attempts. You\'re blocked for now. Please try again later';
+			}
+
 		}
 		public function validate_fields(){
-			if ($this->settings['authentication']=='userpassword') {
-				if( empty( $_POST[ 'netpay_username' ]) ) {
-					wc_add_notice(  'Netpay username is required!', 'error');
-					return false;
+			if ($this->blocked==false) {
+				if ($this->settings['authentication']=='userpassword') {
+					if( empty( $_POST[ 'netpay_username' ]) ) {
+						wc_add_notice(  'Netpay username is required!', 'error');
+						return false;
+					}
+					if( empty( $_POST[ 'netpay_password' ]) ) {
+						wc_add_notice(  'Netpay password is required!', 'error');
+						return false;
+					}
+				} elseif ($this->settings['authentication']=='cardid') {
+					if( empty( $_POST[ 'netpay_cardid' ]) ) {
+						wc_add_notice(  'Netpay CardID is required!', 'error');
+						return false;
+					}
 				}
-				if( empty( $_POST[ 'netpay_password' ]) ) {
-					wc_add_notice(  'Netpay password is required!', 'error');
-					return false;
-				}
-			} elseif ($this->settings['authentication']=='cardid') {
-				if( empty( $_POST[ 'netpay_cardid' ]) ) {
-					wc_add_notice(  'Netpay CardID is required!', 'error');
-					return false;
-				}
+				return true;
+			} else {
+				wc_add_notice('Too many attempts. You\'re blocked for now. Please try again later', 'error');
+				return false;
 			}
-			return true;
 		}
 		public function process_payment( $order_id ) {
 			global $woocommerce;
+			foreach ($this->xfx_codes as $xfx_code) {
+				if ($_SESSION['xfx_error_'.$xfx_code]>$this->settings['attempts']) {
+					wc_add_notice('Too many attempts. You\'re blocked for now. Please try again later', 'error');
+					return;
+				}
+			}
 			$order=wc_get_order( $order_id);
 			$orderdata=json_decode($order, true);
 			$body=array(
@@ -198,14 +229,22 @@ function netpay_init_gateway_class() {
 						'redirect'=>$this->get_return_url($order)
 					);
 				} elseif (isset($body['ResultMessage'])) {
-					wc_add_notice($body['ResultMessage'], 'error');
+					foreach ($this->xfx_codes as $xfx_code) {
+						if ($body['ResultCode']==$xfx_code) {
+							$_SESSION['xfx_error_'.$xfx_code]++;
+							if ($_SESSION['xfx_error_'.$xfx_code]>$this->settings['attempts']) {
+								wc_add_notice('Too many attempts. You\'re blocked for now. Please try again later', 'error');
+							}
+						}
+					}
+					wc_add_notice($body['ResultCode'].':'.$body['ResultMessage'], 'notice');
 					return;
 				} else {
-					wc_add_notice('Please try again. ', 'error');
+					wc_add_notice('Please try again. ', 'notice');
 					return;
 				}
 			} else {
-				wc_add_notice(  'Connection error.', 'error');
+				wc_add_notice('Connection error.', 'error');
 				return;
 			}
 		}
